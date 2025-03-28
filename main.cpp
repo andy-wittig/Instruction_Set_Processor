@@ -24,12 +24,6 @@ std::map<std::string, int> register_map //Assigns a register's string name to co
 	{"R7", 7}
 };
 
-//Status Flag Init
-int n_flag = 0;
-int z_flag = 0;
-int c_flag = 0;
-int v_flag = 0;
-
 bool checkImmediate(std::string immediate)
 {
 	if (immediate[0] == '#')
@@ -65,9 +59,43 @@ bool checkRegister(std::string register_name) //Helper function to find if regis
 }
 
 //Validate Operator Functions
-bool validateTwoOperands(std::vector<std::string> operands, int line_number)
+bool validateMemoryOperands(std::vector<std::string> operands, int line_number)
 {
 	if (operands.size() != 2) //Check for correct number of operands.
+	{
+		std::cerr << "Error: Invalid Operand Count on Line: " << std::to_string(line_number) << std::endl;
+		return false;
+	}
+
+	if (!checkRegister(operands[0]))
+	{
+		std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Invalid Operand(s)." << std::endl;
+		return false;
+	}
+
+	uint32_t address;
+	try
+	{
+		address = static_cast<std::uint32_t>(std::stoul(operands[1], NULL, 16)); //Convert the string to an unsigned long and then cast to unsigned int of 32 bits.
+		uint32_t start_address = 0x100;
+		uint32_t end_address = start_address - sizeof(memory_array[0]) + sizeof(memory_array);
+		if (address > end_address || address < start_address) 
+		{
+			std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Memory Address Out of Range." << std::endl;
+			return false; 
+		}
+	}
+	catch (const std::exception& ex)
+	{
+		std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Invalid Operand(s)." << std::endl;
+		return false;
+	}
+
+	return true;
+}
+bool validateTwoOperands(std::vector<std::string> operands, int line_number)
+{
+	if (operands.size() != 2)
 	{
 		std::cerr << "Error: Invalid Operand Count on Line: " << std::to_string(line_number) << std::endl;
 		return false;
@@ -88,7 +116,7 @@ bool validateTwoOperands(std::vector<std::string> operands, int line_number)
 
 bool validateArithmeticOperands(std::vector<std::string> operands, int operand_count, int line_number)
 {
-	if (operands.size() != operand_count) //Check for correct number of operands.
+	if (operands.size() != operand_count)
 	{
 		std::cerr << "Error: Invalid Operand Count on Line: " << std::to_string(line_number) << std::endl;
 		return false;
@@ -107,8 +135,29 @@ bool validateArithmeticOperands(std::vector<std::string> operands, int operand_c
 	else return false;
 }
 
-void processCMP(std::vector<std::string> operands)
+int sign(uint32_t result) //Helper function for returning the sign of the result of an operation.
 {
+	int32_t signed_result = static_cast<int32_t>(result);
+	if (signed_result < 0) { return -1; }
+	if (signed_result > 0) { return 1; }
+	return 0;
+}
+
+void processLoad(std::vector<std::string> operands)
+{
+	uint32_t starting_address = 0x100;
+	uint32_t address = static_cast<std::uint32_t>(std::stoul(operands[1], NULL, 16));
+	int index = (address - starting_address) / sizeof(memory_array[0]);
+	memory_array[index] = register_array[register_map[operands[0]]];
+}
+
+void processCMP(std::vector<std::string> operands) //Sets the NZCV flags
+{
+	int n_flag = 0;
+	int z_flag = 0;
+	int c_flag = 0;
+	int v_flag = 0;
+
 	uint32_t operand1;
 	uint32_t operand2;
 
@@ -128,9 +177,23 @@ void processCMP(std::vector<std::string> operands)
 		operand2 = register_array[register_map[operands[1]]];
 	}
 
-	n_flag = sign()
+	if (sign(operand1 - operand2) == -1) { n_flag = 1; }
+	else { n_flag = 0; }
 
+	if (sign(operand1 - operand2) == 0) { z_flag = 1; }
+	else { z_flag = 0; }
 
+	if (operand1 >= operand2) { c_flag = 1; }
+	else { c_flag = 0; }
+
+	if ((static_cast<int32_t>(operand1) > 0 && static_cast<int32_t>(operand2) < 0 && sign(operand1 - operand2) == -1) ||
+		(static_cast<int32_t>(operand1) < 0 && static_cast<int32_t>(operand2) > 0 && sign(operand1 - operand2) == 1))
+	{
+		v_flag = 1;
+	}
+	else { v_flag = 0; }
+
+	std::cout << "N: " << n_flag << ", Z: " << z_flag << ", C: " << c_flag << ", V: " << v_flag << std::endl;
 }
 
 uint32_t processMov(std::vector<std::string> operands)
@@ -206,11 +269,6 @@ void displayRegistersAndMemory()
 	std::cout << "\n";
 }
 
-void displayStatusFlags()
-{
-	std::cout << "N: " << n_flag << ", Z: " << z_flag << ", C: " << c_flag << ", V: " << v_flag << std::endl;
-}
-
 int main()
 {
 	//Decode
@@ -275,7 +333,33 @@ int main()
 				{
 					displayRegistersAndMemory();
 					processCMP(operand_vec);
-					displayStatusFlags();
+				}
+			}
+			else if (operation == "LOAD")
+			{
+				while (ss >> operand)
+				{
+					operand.erase(std::remove(operand.begin(), operand.end(), ','), operand.end());
+					operand_vec.push_back(operand);
+				}
+
+				if (validateMemoryOperands(operand_vec, line_number))
+				{
+					processLoad(operand_vec);
+					displayRegistersAndMemory();
+				}
+			}
+			else if (operation == "STORE")
+			{
+				while (ss >> operand)
+				{
+					operand.erase(std::remove(operand.begin(), operand.end(), ','), operand.end());
+					operand_vec.push_back(operand);
+				}
+
+				if (validateMemoryOperands(operand_vec, line_number))
+				{
+					displayRegistersAndMemory();
 				}
 			}
 			else
