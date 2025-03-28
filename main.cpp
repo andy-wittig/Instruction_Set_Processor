@@ -24,6 +24,11 @@ std::map<std::string, int> register_map //Assigns a register's string name to co
 	{"R7", 7}
 };
 
+int n_flag = 0;
+int z_flag = 0;
+int c_flag = 0;
+int v_flag = 0;
+
 bool checkImmediate(std::string immediate)
 {
 	if (immediate[0] == '#')
@@ -148,16 +153,19 @@ void processLoad(std::vector<std::string> operands)
 	uint32_t starting_address = 0x100;
 	uint32_t address = static_cast<std::uint32_t>(std::stoul(operands[1], NULL, 16));
 	int index = (address - starting_address) / sizeof(memory_array[0]);
+	register_array[register_map[operands[0]]] = memory_array[index];
+}
+
+void processStore(std::vector<std::string> operands)
+{
+	uint32_t starting_address = 0x100;
+	uint32_t address = static_cast<std::uint32_t>(std::stoul(operands[1], NULL, 16));
+	int index = (address - starting_address) / sizeof(memory_array[0]);
 	memory_array[index] = register_array[register_map[operands[0]]];
 }
 
 void processCMP(std::vector<std::string> operands) //Sets the NZCV flags
 {
-	int n_flag = 0;
-	int z_flag = 0;
-	int c_flag = 0;
-	int v_flag = 0;
-
 	uint32_t operand1;
 	uint32_t operand2;
 
@@ -192,8 +200,6 @@ void processCMP(std::vector<std::string> operands) //Sets the NZCV flags
 		v_flag = 1;
 	}
 	else { v_flag = 0; }
-
-	std::cout << "N: " << n_flag << ", Z: " << z_flag << ", C: " << c_flag << ", V: " << v_flag << std::endl;
 }
 
 uint32_t processMov(std::vector<std::string> operands)
@@ -264,7 +270,7 @@ void displayRegistersAndMemory()
 	std::cout << "Memory Array:" << std::endl;
 	for (int i = 0; i < memory_size; i++)
 	{
-		std::cout << memory_array[i] << ", ";
+		std::cout << "0x" << std::hex << std::uppercase << memory_array[i] << ", ";
 	}
 	std::cout << "\n";
 }
@@ -283,21 +289,21 @@ int main()
 
 		while (getline(instruction_file, line))
 		{
+			std::replace(line.begin(), line.end(), ',', ' ');
+
 			std::stringstream ss(line);
 			std::string operation;
 			std::string operand;
 			std::vector<std::string> operand_vec;
 
-			std::cout << "--> " << line << std::endl;
-
 			ss >> operation;
 
+			std::cout << "--> " << line << std::endl;
 			//Arithmetic Operations
 			if (operation == "ADD" || operation == "SUB" || operation == "AND" || operation == "OR" || operation == "XOR")
 			{
 				while (ss >> operand) //Seperate tokens by whitespace
 				{
-					operand.erase(std::remove(operand.begin(), operand.end(), ','), operand.end()); //Remove commas
 					operand_vec.push_back(operand);
 				}
 
@@ -311,7 +317,6 @@ int main()
 			{
 				while (ss >> operand)
 				{
-					operand.erase(std::remove(operand.begin(), operand.end(), ','), operand.end());
 					operand_vec.push_back(operand);
 				}
 
@@ -325,7 +330,6 @@ int main()
 			{
 				while (ss >> operand)
 				{
-					operand.erase(std::remove(operand.begin(), operand.end(), ','), operand.end());
 					operand_vec.push_back(operand);
 				}
 
@@ -333,13 +337,13 @@ int main()
 				{
 					displayRegistersAndMemory();
 					processCMP(operand_vec);
+					std::cout << "N: " << n_flag << ", Z: " << z_flag << ", C: " << c_flag << ", V: " << v_flag << std::endl;
 				}
 			}
 			else if (operation == "LOAD")
 			{
 				while (ss >> operand)
 				{
-					operand.erase(std::remove(operand.begin(), operand.end(), ','), operand.end());
 					operand_vec.push_back(operand);
 				}
 
@@ -353,20 +357,67 @@ int main()
 			{
 				while (ss >> operand)
 				{
-					operand.erase(std::remove(operand.begin(), operand.end(), ','), operand.end());
 					operand_vec.push_back(operand);
 				}
 
 				if (validateMemoryOperands(operand_vec, line_number))
 				{
+					processStore(operand_vec);
 					displayRegistersAndMemory();
 				}
 			}
+			else if (operation == "BEQ")
+			{
+				while (ss >> operand)
+				{
+					operand_vec.push_back(operand);
+				}
+
+				if (operand_vec.size() != 1)
+				{
+					std::cerr << "Error: Invalid Operand Count on Line: " << std::to_string(line_number) << std::endl;
+					continue;
+				}
+
+				if (z_flag == 1) { std::cout << "Branch Taken to: " << operand_vec[0] << std::endl; }
+				else { std::cout << "Branch Not Taken to: " << operand_vec[0] << std::endl; }
+			}
+			else if (operation == "BNE")
+			{
+				while (ss >> operand)
+				{
+					operand_vec.push_back(operand);
+				}
+
+				if (operand_vec.size() != 1)
+				{
+					std::cerr << "Error: Invalid Operand Count on Line: " << std::to_string(line_number) << std::endl;
+					continue;
+				}
+
+				if (z_flag == 0) { std::cout << "Branch Taken to: " << operand_vec[0] << std::endl; }
+				else { std::cout << "Branch Not Taken to: " << operand_vec[0] << std::endl; }
+			}
+			else if (operation == "BAL")
+			{
+				while (ss >> operand)
+				{
+					operand_vec.push_back(operand);
+				}
+
+				if (operand_vec.size() != 1)
+				{
+					std::cerr << "Error: Invalid Operand Count on Line: " << std::to_string(line_number) << std::endl;
+					continue;
+				}
+
+				std::cout << "Branch Taken to: " << operand_vec[0] << std::endl; }
 			else
 			{
 				std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Operation: " << operation << ", is Not Supported." << std::endl;
 				continue;
 			}
+			std::cout << "\n";
 
 			line_number++;
 		}
