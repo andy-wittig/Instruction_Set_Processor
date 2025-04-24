@@ -149,6 +149,28 @@ bool validateArithmeticOperands(std::vector<std::string> operands, int operand_c
 	else return false;
 }
 
+bool validateShiftOperands(std::vector<std::string> operands, int line_number)
+{
+	if (operands.size() != 3)
+	{
+		std::cerr << "Error: Invalid Operand Count on Line: " << std::to_string(line_number) << std::endl;
+		return false;
+	}
+
+	if (!checkRegister(operands[0]) || !checkRegister(operands[1]))
+	{
+		std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Invalid Operand(s)." << std::endl;
+		return false;
+	}
+
+	if (!checkImmediate(operands[2]))
+	{
+		return false;
+	}
+	
+	return true;
+}
+
 int sign(uint32_t result) //Helper function for returning the sign of the result of an operation.
 {
 	int32_t signed_result = static_cast<int32_t>(result);
@@ -578,6 +600,94 @@ int main()
 				if (validateMemoryOperands(operand_vec, line_number))
 				{
 					processStore(operand_vec);
+					displayRegistersAndMemory();
+				}
+			}
+			else if (operation.substr(0, 3) == "LSL")
+			{
+				if (operation.substr(3, 2) == "GT" || operation.substr(3, 2) == "GE" || operation.substr(3, 2) == "LT" ||
+					operation.substr(3, 2) == "LE" || operation.substr(3, 2) == "EQ" || operation.substr(3, 2) == "NE")
+				{
+					if (operation.length() > 5)
+					{
+						std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Operation: " << operation << ", is Not Supported." << std::endl;
+						continue;
+					}
+					if (!checkFlags(operation.substr(3, 2)))
+					{
+						std::cout << "Conditional not met, instruction did not execute." << std::endl;
+						displayRegistersAndMemory();
+						continue;
+					}
+				}
+
+				while (ss >> operand)
+				{
+					operand_vec.push_back(operand);
+				}
+
+				if (validateShiftOperands(operand_vec, line_number))
+				{
+					uint32_t operand3;
+					if (operand_vec[2][0] == '#') //OPCODE is an immediate.
+					{
+						operand_vec[2].erase(0, 1);
+
+						if (operand_vec[2][0] == '0' && operand_vec[2][1] == 'x') //Check if value is hexidecimal or decimal.
+							operand3 = static_cast<std::uint32_t>(std::stoul(operand_vec[2], NULL, 16)); //Convert the string to an unsigned long and then cast to unsigned int of 32 bits.
+						else
+							operand3 = static_cast<std::uint32_t>(std::stoul(operand_vec[2]));
+					}
+					else //OPCODE is a register
+					{
+						operand3 = register_array[register_map[operand_vec[2]]];
+					}
+
+					register_array[register_map[operand_vec[0]]] = register_array[register_map[operand_vec[1]]] << operand3;
+					displayRegistersAndMemory();
+				}
+			}
+			else if (operation.substr(0, 3) == "LSR")
+			{
+				if (operation.substr(3, 2) == "GT" || operation.substr(3, 2) == "GE" || operation.substr(3, 2) == "LT" ||
+					operation.substr(3, 2) == "LE" || operation.substr(3, 2) == "EQ" || operation.substr(3, 2) == "NE")
+				{
+					if (operation.length() > 5)
+					{
+						std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Operation: " << operation << ", is Not Supported." << std::endl;
+						continue;
+					}
+					if (!checkFlags(operation.substr(3, 2)))
+					{
+						std::cout << "Conditional not met, instruction did not execute." << std::endl;
+						displayRegistersAndMemory();
+						continue;
+					}
+				}
+
+				while (ss >> operand)
+				{
+					operand_vec.push_back(operand);
+				}
+
+				if (validateShiftOperands(operand_vec, line_number))
+				{
+					uint32_t operand3;
+					if (operand_vec[2][0] == '#') //OPCODE is an immediate.
+					{
+						operand_vec[2].erase(0, 1);
+
+						if (operand_vec[2][0] == '0' && operand_vec[2][1] == 'x') //Check if value is hexidecimal or decimal.
+							operand3 = static_cast<std::uint32_t>(std::stoul(operand_vec[2], NULL, 16)); //Convert the string to an unsigned long and then cast to unsigned int of 32 bits.
+						else
+							operand3 = static_cast<std::uint32_t>(std::stoul(operand_vec[2]));
+					}
+					else //OPCODE is a register
+					{
+						operand3 = register_array[register_map[operand_vec[2]]];
+					}
+
+					register_array[register_map[operand_vec[0]]] = register_array[register_map[operand_vec[1]]] >> operand3;
 					displayRegistersAndMemory();
 				}
 			}
