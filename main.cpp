@@ -11,7 +11,7 @@
 std::uint32_t memory_array[5];
 
 //Reegister Init
-std::uint32_t register_array[8];
+std::uint32_t register_array[12];
 std::map<std::string, int> register_map //Assigns a register's string name to corresponding register_array index.
 {
 	{"R0", 0},
@@ -21,7 +21,11 @@ std::map<std::string, int> register_map //Assigns a register's string name to co
 	{"R4", 4},
 	{"R5", 5},
 	{"R6", 6},
-	{"R7", 7}
+	{"R7", 7},
+	{"R8", 8},
+	{"R9", 9},
+	{"R10", 10},
+	{"R11", 11}
 };
 
 int n_flag = 0;
@@ -78,16 +82,21 @@ bool validateMemoryOperands(std::vector<std::string> operands, int line_number)
 		return false;
 	}
 
+	if (checkRegister(operands[1]))
+	{
+		return true;
+	}
+
 	uint32_t address;
 	try
 	{
 		address = static_cast<std::uint32_t>(std::stoul(operands[1], NULL, 16)); //Convert the string to an unsigned long and then cast to unsigned int of 32 bits.
 		uint32_t start_address = 0x100;
 		uint32_t end_address = start_address - sizeof(memory_array[0]) + sizeof(memory_array);
-		if (address > end_address || address < start_address) 
+		if (address > end_address || address < start_address)
 		{
 			std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Memory Address Out of Range." << std::endl;
-			return false; 
+			return false;
 		}
 	}
 	catch (const std::exception& ex)
@@ -150,18 +159,35 @@ int sign(uint32_t result) //Helper function for returning the sign of the result
 
 void processLoad(std::vector<std::string> operands)
 {
-	uint32_t starting_address = 0x100;
-	uint32_t address = static_cast<std::uint32_t>(std::stoul(operands[1], NULL, 16));
-	int index = (address - starting_address) / sizeof(memory_array[0]);
-	register_array[register_map[operands[0]]] = memory_array[index];
+	if (checkRegister(operands[1]))
+	{
+		register_array[register_map[operands[0]]] = memory_array[register_array[register_map[operands[1]]]];
+	}
+	else
+	{
+		uint32_t starting_address = 0x100;
+		uint32_t address = static_cast<std::uint32_t>(std::stoul(operands[1], NULL, 16));
+		int index = (address - starting_address) / sizeof(memory_array[0]);
+		register_array[register_map[operands[0]]] = memory_array[index];
+	}
 }
 
 void processStore(std::vector<std::string> operands)
 {
-	uint32_t starting_address = 0x100;
-	uint32_t address = static_cast<std::uint32_t>(std::stoul(operands[1], NULL, 16));
-	int index = (address - starting_address) / sizeof(memory_array[0]);
-	memory_array[index] = register_array[register_map[operands[0]]];
+	if (checkRegister(operands[1]))
+	{
+		uint32_t starting_address = 0x100;
+		uint32_t address = register_array[register_map[operands[1]]];
+		int index = (address - starting_address) / sizeof(memory_array[0]);
+		memory_array[index] = register_array[register_map[operands[0]]];
+	}
+	else
+	{
+		uint32_t starting_address = 0x100;
+		uint32_t address = static_cast<std::uint32_t>(std::stoul(operands[1], NULL, 16));
+		int index = (address - starting_address) / sizeof(memory_array[0]);
+		memory_array[index] = register_array[register_map[operands[0]]];
+	}
 }
 
 void processCMP(std::vector<std::string> operands) //Sets the NZCV flags
@@ -223,7 +249,7 @@ uint32_t processMov(std::vector<std::string> operands)
 	return operand1;
 }
 
-uint32_t processArithmetic(std::vector<std::string> operands, std::string operation_type)
+uint32_t processArithmetic(std::vector<std::string> operands, std::string operation_type, bool update_flags)
 {
 	uint32_t operand2;
 	uint32_t operand3;
@@ -245,15 +271,60 @@ uint32_t processArithmetic(std::vector<std::string> operands, std::string operat
 	}
 
 	if (operation_type == "ADD")
-		return operand2 + operand3;
-	if (operation_type == "SUB")
-		return operand2 - operand3;
-	if (operation_type == "AND")
-		return operand2 & operand3;
-	if (operation_type == "OR")
-		return operand2 | operand3;
-	if (operation_type == "XOR")
-		return operand2 ^ operand3;
+	{
+		uint32_t result = operand2 + operand3;
+		if (update_flags)
+		{
+			n_flag = sign(operand2 + operand3) == -1;
+			z_flag = sign(operand2 + operand3) == 0;
+			c_flag = result > UINT32_MAX;
+			v_flag = ((sign(operand2) ^ sign(result)) & ~(sign(operand2) ^ sign(operand3))) < 0;
+		}
+		return result;
+	}
+	else if (operation_type == "SUB")
+	{
+		uint32_t result = operand2 - operand3;
+		if (update_flags)
+		{
+			n_flag = sign(operand2 - operand3) == -1;
+			z_flag = sign(operand2 - operand3) == 0;
+			c_flag = operand2 >= operand3;
+			v_flag = ((sign(operand2) ^ sign(operand3)) & (sign(operand2) ^ sign(result))) < 0;
+		}
+		return result;
+	}
+	else if (operation_type == "AND")
+	{
+		uint32_t result = operand2 & operand3;
+		if (update_flags)
+		{
+			n_flag = sign(operand2 & operand3) == -1;
+			z_flag = sign(operand2 & operand3) == 0;
+		}
+		return result;
+	}
+	else if (operation_type == "ORR")
+	{
+		uint32_t result = operand2 | operand3;
+		if (update_flags)
+		{
+			n_flag = sign(operand2 | operand3) == -1;
+			z_flag = sign(operand2 | operand3) == 0;
+		}
+		return result;
+	}
+	else if (operation_type == "EOR")
+	{
+		uint32_t result = operand2 ^ operand3;
+		if (update_flags)
+		{
+			n_flag = sign(operand2 ^ operand3) == -1;
+			z_flag = sign(operand2 ^ operand3) == 0;
+		}
+		return result;
+	}
+	return 0;
 }
 
 void displayRegistersAndMemory()
@@ -264,15 +335,52 @@ void displayRegistersAndMemory()
 	std::cout << "Register Array:" << std::endl;
 	for (int i = 0; i < register_size; i++)
 	{
-		std::cout << "R" << i << "=0x" << std::hex << std::uppercase << register_array[i] << ", ";
+		if (i == 6) { std::cout << "\n"; }
+		std::cout << "R" << std::dec << i << "=0x" << std::hex << std::uppercase << register_array[i] << ", ";
 	}
-	std::cout << "\n";
+	std::cout << "\nN: " << n_flag << ", Z: " << z_flag << ", C: " << c_flag << ", V: " << v_flag << std::endl;
 	std::cout << "Memory Array:" << std::endl;
 	for (int i = 0; i < memory_size; i++)
 	{
 		std::cout << "0x" << std::hex << std::uppercase << memory_array[i] << ", ";
 	}
 	std::cout << "\n";
+}
+
+bool checkFlags(std::string condition)
+{
+	if (condition == "GT")
+	{
+		if (n_flag == v_flag && z_flag == 0) { return true; }
+		else { return false; }
+	}
+	else if (condition == "GE")
+	{
+		if (n_flag == v_flag) { return true; }
+		else { return false; }
+	}
+	else if (condition == "LT")
+	{
+		if (n_flag != v_flag) { return true; }
+		else { return false; }
+	}
+	else if (condition == "LE")
+	{
+		if (n_flag != v_flag && z_flag == 1) { return true; }
+		else { return false; }
+	}
+	else if (condition == "EQ")
+	{
+		if (z_flag == 1) { return true; }
+		else { return false; }
+	}
+	else if (condition == "NE")
+	{
+		if (z_flag == 0) { return true; }
+		else { return false; }
+	}
+
+	return false;
 }
 
 int main()
@@ -298,10 +406,37 @@ int main()
 
 			ss >> operation;
 
-			std::cout << "--> " << line << std::endl;
+			std::cout << "\n--> " << line << std::endl;
 			//Arithmetic Operations
-			if (operation == "ADD" || operation == "SUB" || operation == "AND" || operation == "OR" || operation == "XOR")
+			if (operation.substr(0, 3) == "ADD" || operation.substr(0, 3) == "SUB" || operation.substr(0, 3) == "AND"
+				|| operation.substr(0, 3) == "ORR" || operation.substr(0, 3) == "EOR")
 			{
+				bool affect_flags = false;
+				if (operation.substr(3, 2) == "GT" || operation.substr(3, 2) == "GE" || operation.substr(3, 2) == "LT" ||
+					operation.substr(3, 2) == "LE" || operation.substr(3, 2) == "EQ" || operation.substr(3, 2) == "NE")
+				{
+					if (operation.length() > 5)
+					{
+						std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Operation: " << operation << ", is Not Supported." << std::endl;
+						continue;
+					}
+					if (!checkFlags(operation.substr(3, 2)))
+					{
+						std::cout << "Conditional not met, instruction did not execute." << std::endl;
+						displayRegistersAndMemory();
+						continue;
+					}
+				}
+				else if (operation.substr(3, 1) == "S")
+				{
+					if (operation.length() > 4)
+					{
+						std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Operation: " << operation << ", is Not Supported." << std::endl;
+						continue;
+					}
+					affect_flags = true;	
+				}
+
 				while (ss >> operand) //Seperate tokens by whitespace
 				{
 					operand_vec.push_back(operand);
@@ -309,12 +444,28 @@ int main()
 
 				if (validateArithmeticOperands(operand_vec, 3, line_number))
 				{
-					register_array[register_map[operand_vec[0]]] = processArithmetic(operand_vec, operation);
+					register_array[register_map[operand_vec[0]]] = processArithmetic(operand_vec, operation.substr(0, 3), affect_flags);
 					displayRegistersAndMemory();
 				}
 			}
-			else if (operation == "MOV")
+			else if (operation.substr(0, 3) == "MOV")
 			{
+				if (operation.substr(3, 2) == "GT" || operation.substr(3, 2) == "GE" || operation.substr(3, 2) == "LT" ||
+					operation.substr(3, 2) == "LE" || operation.substr(3, 2) == "EQ" || operation.substr(3, 2) == "NE")
+				{
+					if (operation.length() > 5)
+					{
+						std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Operation: " << operation << ", is Not Supported." << std::endl;
+						continue;
+					}
+					if (!checkFlags(operation.substr(3, 2)))
+					{
+						std::cout << "Conditional not met, instruction did not execute." << std::endl;
+						displayRegistersAndMemory();
+						continue;
+					}
+				}
+
 				while (ss >> operand)
 				{
 					operand_vec.push_back(operand);
@@ -326,7 +477,36 @@ int main()
 					displayRegistersAndMemory();
 				}
 			}
-			else if (operation == "CMP")
+			else if (operation.substr(0, 3) == "MVN")
+			{
+				if (operation.substr(3, 2) == "GT" || operation.substr(3, 2) == "GE" || operation.substr(3, 2) == "LT" ||
+					operation.substr(3, 2) == "LE" || operation.substr(3, 2) == "EQ" || operation.substr(3, 2) == "NE")
+				{
+					if (operation.length() > 5)
+					{
+						std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Operation: " << operation << ", is Not Supported." << std::endl;
+						continue;
+					}
+					if (!checkFlags(operation.substr(3, 2)))
+					{
+						std::cout << "Conditional not met, instruction did not execute." << std::endl;
+						displayRegistersAndMemory();
+						continue;
+					}
+				}
+
+				while (ss >> operand)
+				{
+					operand_vec.push_back(operand);
+				}
+
+				if (validateTwoOperands(operand_vec, line_number))
+				{
+					register_array[register_map[operand_vec[0]]] = ~processMov(operand_vec);
+					displayRegistersAndMemory();
+				}
+			}
+			else if (operation.substr(0, 3) == "CMP")
 			{
 				while (ss >> operand)
 				{
@@ -335,15 +515,32 @@ int main()
 
 				if (validateTwoOperands(operand_vec, line_number))
 				{
-					displayRegistersAndMemory();
 					processCMP(operand_vec);
-					std::cout << "N: " << n_flag << ", Z: " << z_flag << ", C: " << c_flag << ", V: " << v_flag << std::endl;
+					displayRegistersAndMemory();
 				}
 			}
-			else if (operation == "LOAD")
+			else if (operation.substr(0, 3) == "LDR")
 			{
+				if (operation.substr(3, 2) == "GT" || operation.substr(3, 2) == "GE" || operation.substr(3, 2) == "LT" ||
+					operation.substr(3, 2) == "LE" || operation.substr(3, 2) == "EQ" || operation.substr(3, 2) == "NE")
+				{
+					if (operation.length() > 5)
+					{
+						std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Operation: " << operation << ", is Not Supported." << std::endl;
+						continue;
+					}
+					if (!checkFlags(operation.substr(3, 2)))
+					{
+						std::cout << "Conditional not met, instruction did not execute." << std::endl;
+						displayRegistersAndMemory();
+						continue;
+					}
+				}
+
 				while (ss >> operand)
 				{
+					operand.erase(std::remove(operand.begin(), operand.end(), '['), operand.end());
+					operand.erase(std::remove(operand.begin(), operand.end(), ']'), operand.end());
 					operand_vec.push_back(operand);
 				}
 
@@ -353,10 +550,28 @@ int main()
 					displayRegistersAndMemory();
 				}
 			}
-			else if (operation == "STORE")
+			else if (operation.substr(0, 3) == "STR")
 			{
+				if (operation.substr(3, 2) == "GT" || operation.substr(3, 2) == "GE" || operation.substr(3, 2) == "LT" ||
+					operation.substr(3, 2) == "LE" || operation.substr(3, 2) == "EQ" || operation.substr(3, 2) == "NE")
+				{
+					if (operation.length() > 5)
+					{
+						std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Operation: " << operation << ", is Not Supported." << std::endl;
+						continue;
+					}
+					if (!checkFlags(operation.substr(3, 2)))
+					{
+						std::cout << "Conditional not met, instruction did not execute." << std::endl;
+						displayRegistersAndMemory();
+						continue;
+					}
+				}
+
 				while (ss >> operand)
 				{
+					operand.erase(std::remove(operand.begin(), operand.end(), '['), operand.end());
+					operand.erase(std::remove(operand.begin(), operand.end(), ']'), operand.end());
 					operand_vec.push_back(operand);
 				}
 
@@ -411,13 +626,13 @@ int main()
 					continue;
 				}
 
-				std::cout << "Branch Taken to: " << operand_vec[0] << std::endl; }
+				std::cout << "Branch Taken to: " << operand_vec[0] << std::endl;
+			}
 			else
 			{
 				std::cerr << "ERROR ON LINE: " << std::to_string(line_number) << ", Operation: " << operation << ", is Not Supported." << std::endl;
 				continue;
 			}
-			std::cout << "\n";
 
 			line_number++;
 		}
@@ -427,5 +642,14 @@ int main()
 	else
 	{
 		std::cerr << "Error: Could not open file: " << file_path << std::endl;
+	}
+
+	std::string input;
+
+	while (true) {
+		std::cout << "Enter (y) to quit.";
+		std::getline(std::cin, input);
+
+		if (input == "y") { break; }
 	}
 };
